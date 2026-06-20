@@ -84,17 +84,72 @@ function Get-LetterMap {
     return $map
 }
 
+function New-DriveRow {
+    param(
+        [int]$Index,
+        [string]$DeviceId,
+        [string]$Model,
+        [string]$Serial = "",
+        [double]$SizeGB = 0,
+        [string]$MediaType = "Unknown",
+        [string]$BusType = "Unknown",
+        [string]$HealthStatus = "Unknown",
+        [string]$Letters = "",
+        [string]$Firmware = "",
+        [bool]$LogicalOnly = $false
+    )
+    return [pscustomobject]@{
+        Index = $Index
+        DeviceId = $DeviceId
+        SmartDevice = if ($DeviceId -match "PhysicalDrive(\d+)") { "/dev/pd$($Matches[1])" } else { "/dev/pd$Index" }
+        Model = if ([string]::IsNullOrWhiteSpace($Model)) { "Unbekanntes Laufwerk $Index" } else { $Model.Trim() }
+        Serial = if ($Serial) { $Serial.Trim() } else { "" }
+        SizeGB = [math]::Round($SizeGB, 1)
+        MediaType = if ($MediaType) { $MediaType } else { "Unknown" }
+        BusType = if ($BusType) { $BusType } else { "Unknown" }
+        HealthStatus = if ($HealthStatus) { $HealthStatus } else { "Unknown" }
+        Letters = if ($Letters) { $Letters } else { "" }
+        Firmware = if ($Firmware) { $Firmware } else { "" }
+        LogicalOnly = $LogicalOnly
+    }
+}
+
+function Add-DriveRow {
+    param(
+        [System.Collections.ArrayList]$Rows,
+        [object]$Row
+    )
+    foreach ($existing in $Rows) {
+        if ($existing.DeviceId -eq $Row.DeviceId) { return }
+        if ($existing.Model -eq $Row.Model -and $existing.SizeGB -eq $Row.SizeGB -and $existing.Letters -eq $Row.Letters) { return }
+    }
+    [void]$Rows.Add($Row)
+}
+
 function Get-DriveInventory {
     $script:LastInventoryError = ""
     $letterMap = Get-LetterMap
     $physical = @{}
+    $physicalRows = New-Object System.Collections.ArrayList
     try {
         foreach ($pd in Get-PhysicalDisk -ErrorAction Stop) {
             $physical[[string]$pd.FriendlyName] = $pd
+            $idx = if ($pd.DeviceId -match "^\d+$") { [int]$pd.DeviceId } else { $physicalRows.Count }
+            Add-DriveRow $physicalRows (New-DriveRow `
+                -Index $idx `
+                -DeviceId "\\.\PhysicalDrive$idx" `
+                -Model ([string]$pd.FriendlyName) `
+                -Serial ([string]$pd.SerialNumber) `
+                -SizeGB ([double]($pd.Size / 1GB)) `
+                -MediaType ([string]$pd.MediaType) `
+                -BusType ([string]$pd.BusType) `
+                -HealthStatus ([string]$pd.HealthStatus))
         }
-    } catch {}
+    } catch {
+        $script:LastInventoryError = "Get-PhysicalDisk fehlgeschlagen: $($_.Exception.Message)"
+    }
 
-    $drives = @()
+    $drives = New-Object System.Collections.ArrayList
     try {
         $diskDrives = Get-CimInstance Win32_DiskDrive -ErrorAction Stop | Sort-Object Index
         foreach ($d in $diskDrives) {
@@ -105,22 +160,31 @@ function Get-DriveInventory {
             $media = if ($pd -and $pd.MediaType) { [string]$pd.MediaType } elseif ($d.MediaType -match "SSD") { "SSD" } else { "Unknown" }
             $bus = if ($pd -and $pd.BusType) { [string]$pd.BusType } else { [string]$d.InterfaceType }
             $health = if ($pd -and $pd.HealthStatus) { [string]$pd.HealthStatus } else { [string]$d.Status }
-            $drives += [pscustomobject]@{
-                Index = [int]$d.Index
-                DeviceId = [string]$d.DeviceID
-                SmartDevice = "/dev/pd$($d.Index)"
-                Model = $model
-                Serial = ([string]$d.SerialNumber).Trim()
-                SizeGB = [math]::Round($d.Size / 1GB, 1)
-                MediaType = $media
-                BusType = $bus
-                HealthStatus = $health
-                Letters = $letters
-                Firmware = [string]$d.FirmwareRevision
-            }
+            Add-DriveRow $drives (New-DriveRow -Index ([int]$d.Index) -DeviceId ([string]$d.DeviceID) -Model $model -Serial ([string]$d.SerialNumber) -SizeGB ([double]($d.Size / 1GB)) -MediaType $media -BusType $bus -HealthStatus $health -Letters $letters -Firmware ([string]$d.FirmwareRevision))
         }
     } catch {
-        $script:LastInventoryError = "CIM-Zugriff fehlgeschlagen: $($_.Exception.Message)"
+        if ($script:LastInventoryError) { $script:LastInventoryError += " | " }
+        $script:LastInventoryError += "CIM-Zugriff fehlgeschlagen: $($_.Exception.Message)"
+    }
+
+    if ($drives.Count -eq 0 -and $physicalRows.Count -gt 0) {
+        foreach ($row in $physicalRows) { Add-DriveRow $drives $row }
+        if ($script:LastInventoryError) { $script:LastInventoryError += " | " }
+        $script:LastInventoryError += "Fallback ueber Get-PhysicalDisk verwendet."
+    }
+
+    if ($drives.Count -eq 0) {
+        try {
+            $wmiDrives = Get-WmiObject Win32_DiskDrive -ErrorAction Stop | Sort-Object Index
+            foreach ($d in $wmiDrives) {
+                $letters = if ($letterMap.ContainsKey([int]$d.Index)) { ($letterMap[[int]$d.Index] | Sort-Object -Unique) -join ", " } else { "" }
+                Add-DriveRow $drives (New-DriveRow -Index ([int]$d.Index) -DeviceId ([string]$d.DeviceID) -Model ([string]$d.Model) -Serial ([string]$d.SerialNumber) -SizeGB ([double]($d.Size / 1GB)) -MediaType ([string]$d.MediaType) -BusType ([string]$d.InterfaceType) -HealthStatus ([string]$d.Status) -Letters $letters -Firmware ([string]$d.FirmwareRevision))
+            }
+            if ($drives.Count -gt 0 -and $script:LastInventoryError) { $script:LastInventoryError += " | Fallback ueber WMI verwendet." }
+        } catch {
+            if ($script:LastInventoryError) { $script:LastInventoryError += " | " }
+            $script:LastInventoryError += "WMI-Fallback fehlgeschlagen: $($_.Exception.Message)"
+        }
     }
 
     if ($drives.Count -eq 0) {
@@ -132,29 +196,38 @@ function Get-DriveInventory {
                     $volumes = Get-Partition -DiskNumber $disk.Number -ErrorAction SilentlyContinue | Get-Volume -ErrorAction SilentlyContinue
                     $letters = ($volumes | Where-Object { $_.DriveLetter } | ForEach-Object { "$($_.DriveLetter):" } | Sort-Object -Unique) -join ", "
                 } catch {}
-                $drives += [pscustomobject]@{
-                    Index = [int]$disk.Number
-                    DeviceId = "\\.\PhysicalDrive$($disk.Number)"
-                    SmartDevice = "/dev/pd$($disk.Number)"
-                    Model = ([string]$disk.FriendlyName).Trim()
-                    Serial = ([string]$disk.SerialNumber).Trim()
-                    SizeGB = [math]::Round($disk.Size / 1GB, 1)
-                    MediaType = if ($disk.MediaType) { [string]$disk.MediaType } else { "Unknown" }
-                    BusType = [string]$disk.BusType
-                    HealthStatus = [string]$disk.HealthStatus
-                    Letters = $letters
-                    Firmware = ""
-                }
+                Add-DriveRow $drives (New-DriveRow -Index ([int]$disk.Number) -DeviceId "\\.\PhysicalDrive$($disk.Number)" -Model ([string]$disk.FriendlyName) -Serial ([string]$disk.SerialNumber) -SizeGB ([double]($disk.Size / 1GB)) -MediaType ([string]$disk.MediaType) -BusType ([string]$disk.BusType) -HealthStatus ([string]$disk.HealthStatus) -Letters $letters)
             }
             if ($drives.Count -gt 0 -and $script:LastInventoryError) {
-                $script:LastInventoryError += " Fallback ueber Get-Disk erfolgreich."
+                $script:LastInventoryError += " | Fallback ueber Get-Disk verwendet."
             }
         } catch {
             if ($script:LastInventoryError) { $script:LastInventoryError += " " }
             $script:LastInventoryError += "Get-Disk-Fallback fehlgeschlagen: $($_.Exception.Message)"
         }
     }
-    return $drives
+
+    if ($drives.Count -eq 0) {
+        try {
+            $idx = 0
+            foreach ($di in [System.IO.DriveInfo]::GetDrives()) {
+                if (-not $di.IsReady) { continue }
+                if ($di.DriveType -ne [System.IO.DriveType]::Fixed -and $di.DriveType -ne [System.IO.DriveType]::Removable) { continue }
+                $letter = $di.Name.TrimEnd('\')
+                Add-DriveRow $drives (New-DriveRow -Index $idx -DeviceId $di.Name -Model "Logisches Laufwerk $letter" -SizeGB ([double]($di.TotalSize / 1GB)) -MediaType "Unknown" -BusType ([string]$di.DriveType) -HealthStatus "Unknown" -Letters $letter -LogicalOnly $true)
+                $idx++
+            }
+            if ($drives.Count -gt 0) {
+                if ($script:LastInventoryError) { $script:LastInventoryError += " | " }
+                $script:LastInventoryError += "Nur logische Laufwerke verfuegbar; SMART-Details koennen eingeschraenkt sein."
+            }
+        } catch {
+            if ($script:LastInventoryError) { $script:LastInventoryError += " | " }
+            $script:LastInventoryError += ".NET-Laufwerksfallback fehlgeschlagen: $($_.Exception.Message)"
+        }
+    }
+
+    return @($drives)
 }
 
 function Detect-Vendor {
@@ -207,8 +280,11 @@ function Get-StorageReliability {
 
 function Analyze-Drive {
     param([object]$Drive)
-    $smartText = Invoke-SmartCtl @("-a", $Drive.SmartDevice)
-    if (-not $smartText) { $smartText = Invoke-SmartCtl @("-a", $Drive.DeviceId) }
+    $smartText = $null
+    if (-not $Drive.LogicalOnly) {
+        $smartText = Invoke-SmartCtl @("-a", $Drive.SmartDevice)
+        if (-not $smartText) { $smartText = Invoke-SmartCtl @("-a", $Drive.DeviceId) }
+    }
     $rel = Get-StorageReliability $Drive
 
     $metrics = [ordered]@{}
@@ -277,6 +353,8 @@ function Analyze-Drive {
         if ($smartText -match "SMART support is:\s+Unavailable|SMART Disabled|Unknown USB bridge") {
             $warnings.Add("SMART-Daten sind nicht verfuegbar. Adapter, RAID/RST oder USB-Bridge pruefen.")
         }
+    } elseif ($Drive.LogicalOnly) {
+        $warnings.Add("Nur logische Windows-Laufwerksdaten verfuegbar. SMART-Details sind fuer dieses Laufwerk nicht direkt auslesbar.")
     } else {
         $warnings.Add("smartctl.exe wurde nicht gefunden. Detailwerte sind auf Windows-Daten begrenzt.")
     }
@@ -314,7 +392,8 @@ function Analyze-Drive {
     if ($score -lt 20) { $verdict = "Tauschen"; $color = [System.Drawing.Color]::FromArgb(192, 57, 43) }
     elseif ($score -lt 40) { $verdict = "Vorsicht"; $color = [System.Drawing.Color]::FromArgb(211, 84, 0) }
     elseif ($score -lt 80) { $verdict = "Noch gut"; $color = [System.Drawing.Color]::FromArgb(181, 137, 0) }
-    if ($metrics["Verschleiss"] -eq "k. A." -and $smartText -eq $null) { $verdict = "Keine Daten"; $color = [System.Drawing.Color]::Gray }
+    if ($Drive.LogicalOnly) { $verdict = "Basisdaten"; $color = [System.Drawing.Color]::FromArgb(52, 152, 219) }
+    elseif ($metrics["Verschleiss"] -eq "k. A." -and $smartText -eq $null) { $verdict = "Keine Daten"; $color = [System.Drawing.Color]::Gray }
 
     if ($warnings.Count -eq 0) { $warnings.Add("Keine kritischen Hinweise erkannt.") }
 
@@ -326,7 +405,7 @@ function Analyze-Drive {
         Color = $color
         Basis = $basis
         Warnings = @($warnings)
-        SmartText = if ($smartText) { $smartText } else { "smartctl.exe nicht gefunden." }
+        SmartText = if ($smartText) { $smartText } elseif ($Drive.LogicalOnly) { "Nur logisches Laufwerk. Fuer SMART-Details bitte physisches Laufwerk auswaehlen oder Storage-Zugriff pruefen." } else { "smartctl.exe nicht gefunden." }
         Time = Get-Date
     }
 }
@@ -463,35 +542,36 @@ $tabInfo.Text = "Info"
 
 $driveGrid = New-Object System.Windows.Forms.DataGridView
 $driveGrid.Location = New-Object System.Drawing.Point(16, 16)
-$driveGrid.Size = New-Object System.Drawing.Size(650, 520)
-$driveGrid.Anchor = "Top,Bottom,Left"
+$driveGrid.Size = New-Object System.Drawing.Size(650, 420)
+$driveGrid.Anchor = "Top,Left"
 $driveGrid.ReadOnly = $true
 $driveGrid.SelectionMode = "FullRowSelect"
 $driveGrid.MultiSelect = $false
 $driveGrid.AutoSizeColumnsMode = "Fill"
 $driveGrid.AllowUserToAddRows = $false
 $driveGrid.AllowUserToDeleteRows = $false
+$driveGrid.BackgroundColor = [System.Drawing.Color]::White
 $tabOverview.Controls.Add($driveGrid)
 
 $btnRefresh = New-Object System.Windows.Forms.Button
 $btnRefresh.Text = "Aktualisieren"
-$btnRefresh.Location = New-Object System.Drawing.Point(16, 548)
+$btnRefresh.Location = New-Object System.Drawing.Point(16, 452)
 $btnRefresh.Size = New-Object System.Drawing.Size(120, 32)
-$btnRefresh.Anchor = "Bottom,Left"
+$btnRefresh.Anchor = "Top,Left"
 $tabOverview.Controls.Add($btnRefresh)
 
 $btnAnalyze = New-Object System.Windows.Forms.Button
 $btnAnalyze.Text = "Pruefen"
-$btnAnalyze.Location = New-Object System.Drawing.Point(144, 548)
+$btnAnalyze.Location = New-Object System.Drawing.Point(144, 452)
 $btnAnalyze.Size = New-Object System.Drawing.Size(120, 32)
-$btnAnalyze.Anchor = "Bottom,Left"
+$btnAnalyze.Anchor = "Top,Left"
 $tabOverview.Controls.Add($btnAnalyze)
 
 $statusLabel = New-Object System.Windows.Forms.Label
 $statusLabel.Text = "Bereit."
-$statusLabel.Location = New-Object System.Drawing.Point(280, 554)
+$statusLabel.Location = New-Object System.Drawing.Point(16, 496)
 $statusLabel.Size = New-Object System.Drawing.Size(390, 24)
-$statusLabel.Anchor = "Bottom,Left"
+$statusLabel.Anchor = "Top,Left"
 $tabOverview.Controls.Add($statusLabel)
 
 $resultPanel = New-Object System.Windows.Forms.Panel
