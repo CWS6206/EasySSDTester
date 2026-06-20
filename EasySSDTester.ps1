@@ -543,7 +543,7 @@ $tabInfo.Text = "Info"
 
 $driveGrid = New-Object System.Windows.Forms.DataGridView
 $driveGrid.Location = New-Object System.Drawing.Point(16, 16)
-$driveGrid.Size = New-Object System.Drawing.Size(650, 420)
+$driveGrid.Size = New-Object System.Drawing.Size(650, 390)
 $driveGrid.Anchor = "Top,Left"
 $driveGrid.ReadOnly = $true
 $driveGrid.SelectionMode = "FullRowSelect"
@@ -574,59 +574,59 @@ $tabOverview.Controls.Add($driveGrid)
 
 $btnRefresh = New-Object System.Windows.Forms.Button
 $btnRefresh.Text = "Aktualisieren"
-$btnRefresh.Location = New-Object System.Drawing.Point(16, 452)
+$btnRefresh.Location = New-Object System.Drawing.Point(16, 424)
 $btnRefresh.Size = New-Object System.Drawing.Size(120, 32)
 $btnRefresh.Anchor = "Top,Left"
 $tabOverview.Controls.Add($btnRefresh)
 
 $btnAnalyze = New-Object System.Windows.Forms.Button
 $btnAnalyze.Text = "Pruefen"
-$btnAnalyze.Location = New-Object System.Drawing.Point(144, 452)
+$btnAnalyze.Location = New-Object System.Drawing.Point(144, 424)
 $btnAnalyze.Size = New-Object System.Drawing.Size(120, 32)
 $btnAnalyze.Anchor = "Top,Left"
 $tabOverview.Controls.Add($btnAnalyze)
 
 $statusLabel = New-Object System.Windows.Forms.Label
 $statusLabel.Text = "Bereit."
-$statusLabel.Location = New-Object System.Drawing.Point(16, 496)
-$statusLabel.Size = New-Object System.Drawing.Size(390, 24)
+$statusLabel.Location = New-Object System.Drawing.Point(16, 468)
+$statusLabel.Size = New-Object System.Drawing.Size(650, 24)
 $statusLabel.Anchor = "Top,Left"
 $tabOverview.Controls.Add($statusLabel)
 
 $resultPanel = New-Object System.Windows.Forms.Panel
 $resultPanel.Location = New-Object System.Drawing.Point(684, 16)
-$resultPanel.Size = New-Object System.Drawing.Size(390, 520)
+$resultPanel.Size = New-Object System.Drawing.Size(410, 560)
 $resultPanel.Anchor = "Top,Bottom,Left,Right"
 $resultPanel.BorderStyle = "FixedSingle"
 $tabOverview.Controls.Add($resultPanel)
 
 $verdictLabel = New-Object System.Windows.Forms.Label
 $verdictLabel.Text = "Noch keine Pruefung"
-$verdictLabel.Font = New-Object System.Drawing.Font("Segoe UI", 24, [System.Drawing.FontStyle]::Bold)
+$verdictLabel.Font = New-Object System.Drawing.Font("Segoe UI", 18, [System.Drawing.FontStyle]::Bold)
 $verdictLabel.ForeColor = [System.Drawing.Color]::White
 $verdictLabel.BackColor = [System.Drawing.Color]::Gray
 $verdictLabel.TextAlign = "MiddleCenter"
-$verdictLabel.Location = New-Object System.Drawing.Point(18, 18)
-$verdictLabel.Size = New-Object System.Drawing.Size(350, 84)
+$verdictLabel.Location = New-Object System.Drawing.Point(10, 12)
+$verdictLabel.Size = New-Object System.Drawing.Size(388, 68)
 $verdictLabel.Anchor = "Top,Left,Right"
 $resultPanel.Controls.Add($verdictLabel)
 
 $metricsBox = New-Object System.Windows.Forms.ListView
-$metricsBox.Location = New-Object System.Drawing.Point(18, 118)
-$metricsBox.Size = New-Object System.Drawing.Size(350, 250)
+$metricsBox.Location = New-Object System.Drawing.Point(10, 96)
+$metricsBox.Size = New-Object System.Drawing.Size(388, 344)
 $metricsBox.Anchor = "Top,Bottom,Left,Right"
 $metricsBox.View = "Details"
 $metricsBox.FullRowSelect = $true
-[void]$metricsBox.Columns.Add("Wert", 155)
-[void]$metricsBox.Columns.Add("Ergebnis", 175)
+[void]$metricsBox.Columns.Add("Wert", 150)
+[void]$metricsBox.Columns.Add("Ergebnis", 220)
 $resultPanel.Controls.Add($metricsBox)
 
 $warningBox = New-Object System.Windows.Forms.TextBox
 $warningBox.Multiline = $true
 $warningBox.ReadOnly = $true
 $warningBox.ScrollBars = "Vertical"
-$warningBox.Location = New-Object System.Drawing.Point(18, 384)
-$warningBox.Size = New-Object System.Drawing.Size(350, 112)
+$warningBox.Location = New-Object System.Drawing.Point(10, 456)
+$warningBox.Size = New-Object System.Drawing.Size(388, 88)
 $warningBox.Anchor = "Bottom,Left,Right"
 $resultPanel.Controls.Add($warningBox)
 
@@ -688,32 +688,62 @@ $btnExport.Size = New-Object System.Drawing.Size(180, 34)
 $btnExport.Anchor = "Bottom,Left"
 $tabReport.Controls.Add($btnExport)
 
-$infoText = New-Object System.Windows.Forms.TextBox
-$infoText.Multiline = $true
-$infoText.ReadOnly = $true
-$infoText.ScrollBars = "Vertical"
-$infoText.Dock = "Fill"
-$infoText.Text = @"
-Easy SSD Tester
-$script:AppVersion
-$script:CopyrightLine
-$script:LicenseLine
+$infoPanel = New-Object System.Windows.Forms.TableLayoutPanel
+$infoPanel.Dock = "Fill"
+$infoPanel.Padding = New-Object System.Windows.Forms.Padding(18)
+$infoPanel.ColumnCount = 1
+$infoPanel.RowCount = 5
+$infoPanel.AutoScroll = $true
+$infoPanel.BackColor = [System.Drawing.Color]::White
+$infoPanel.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100))) | Out-Null
+foreach ($height in @(88, 110, 132, 112, 76)) {
+    $infoPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, $height))) | Out-Null
+}
 
-Freeware kostenlos.
+function New-InfoBox {
+    param(
+        [string]$Title,
+        [string]$Body,
+        [System.Drawing.Color]$Accent
+    )
+    $box = New-Object System.Windows.Forms.Panel
+    $box.Dock = "Fill"
+    $box.Margin = New-Object System.Windows.Forms.Padding(0, 0, 0, 12)
+    $box.BackColor = [System.Drawing.Color]::FromArgb(247, 249, 252)
 
-Dieses portable Tool prueft SSDs und Laufwerke mit Windows-Daten und optional mit smartctl.exe.
+    $bar = New-Object System.Windows.Forms.Panel
+    $bar.Dock = "Left"
+    $bar.Width = 5
+    $bar.BackColor = $Accent
+    $box.Controls.Add($bar)
 
-Hinweise:
-- Fuer vollstaendige SMART-/NVMe-Werte smartctl.exe in Tools\smartctl.exe ablegen oder in PATH bereitstellen.
-- Bei USB-Adaptern muss SMART-Passthrough unterstuetzt werden.
-- RAID/Intel-RST-Konfigurationen koennen SMART-Daten blockieren.
-- Der Speed-Test ist eine Plausibilitaetsmessung, kein vollstaendiger Benchmark.
-- Ergebnisse sind technische Einschaetzungen und keine Garantie gegen Laufwerksausfall.
+    $titleLabel = New-Object System.Windows.Forms.Label
+    $titleLabel.Text = $Title
+    $titleLabel.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
+    $titleLabel.ForeColor = [System.Drawing.Color]::FromArgb(32, 44, 57)
+    $titleLabel.Location = New-Object System.Drawing.Point(18, 12)
+    $titleLabel.Size = New-Object System.Drawing.Size(980, 24)
+    $titleLabel.Anchor = "Top,Left,Right"
+    $box.Controls.Add($titleLabel)
 
-Lizenz:
-Easy SSD Tester wird als Public GNU / GNU GPL v3 bereitgestellt.
-"@
-$tabInfo.Controls.Add($infoText)
+    $bodyLabel = New-Object System.Windows.Forms.Label
+    $bodyLabel.Text = $Body
+    $bodyLabel.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $bodyLabel.ForeColor = [System.Drawing.Color]::FromArgb(35, 43, 52)
+    $bodyLabel.Location = New-Object System.Drawing.Point(18, 40)
+    $bodyLabel.Size = New-Object System.Drawing.Size(980, 60)
+    $bodyLabel.Anchor = "Top,Left,Right"
+    $bodyLabel.AutoSize = $false
+    $box.Controls.Add($bodyLabel)
+    return $box
+}
+
+$infoPanel.Controls.Add((New-InfoBox "Easy SSD Tester" "$script:AppVersion`r`n$script:CopyrightLine`r`n$script:LicenseLine" ([System.Drawing.Color]::FromArgb(52, 152, 219))), 0, 0)
+$infoPanel.Controls.Add((New-InfoBox "Zweck" "Portable Freeware fuer Windows 11. Prueft SSDs und Laufwerke mit Windows-Daten und optional mit smartctl.exe, ohne lokale Installation." ([System.Drawing.Color]::FromArgb(46, 204, 113))), 0, 1)
+$infoPanel.Controls.Add((New-InfoBox "SMART und NVMe" "Fuer vollstaendige SMART-/NVMe-Werte smartctl.exe in Tools\smartctl.exe ablegen oder in PATH bereitstellen. Bei USB-Adaptern muss SMART-Passthrough unterstuetzt werden." ([System.Drawing.Color]::FromArgb(155, 89, 182))), 0, 2)
+$infoPanel.Controls.Add((New-InfoBox "Grenzen" "RAID-/Intel-RST-Konfigurationen koennen SMART-Daten blockieren. Der Speed-Test ist eine Plausibilitaetsmessung, kein vollstaendiger Benchmark. Ergebnisse sind technische Einschaetzungen und keine Garantie gegen Laufwerksausfall." ([System.Drawing.Color]::FromArgb(230, 126, 34))), 0, 3)
+$infoPanel.Controls.Add((New-InfoBox "Lizenz" "Easy SSD Tester wird als Public GNU / GNU GPL v3 bereitgestellt." ([System.Drawing.Color]::FromArgb(44, 62, 80))), 0, 4)
+$tabInfo.Controls.Add($infoPanel)
 
 function Refresh-Grid {
     $statusLabel.Text = "Laufwerke werden gelesen..."
