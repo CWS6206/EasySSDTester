@@ -12,6 +12,7 @@ $script:IconPath = Join-Path $script:AppDir "Assets\EasySSDTester.ico"
 $script:SelectedDrive = $null
 $script:SelectedAnalysis = $null
 $script:LastInventoryError = ""
+$script:DriveInventory = @()
 
 function Test-IsAdmin {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -547,10 +548,28 @@ $driveGrid.Anchor = "Top,Left"
 $driveGrid.ReadOnly = $true
 $driveGrid.SelectionMode = "FullRowSelect"
 $driveGrid.MultiSelect = $false
-$driveGrid.AutoSizeColumnsMode = "Fill"
+$driveGrid.AutoGenerateColumns = $false
+$driveGrid.AutoSizeColumnsMode = "None"
 $driveGrid.AllowUserToAddRows = $false
 $driveGrid.AllowUserToDeleteRows = $false
 $driveGrid.BackgroundColor = [System.Drawing.Color]::White
+$driveGrid.RowHeadersVisible = $false
+$driveGrid.ColumnHeadersVisible = $true
+$driveGrid.EditMode = "EditProgrammatically"
+[void]$driveGrid.Columns.Add("Index", "Nr.")
+$driveGrid.Columns["Index"].Width = 42
+[void]$driveGrid.Columns.Add("Model", "Modell")
+$driveGrid.Columns["Model"].Width = 235
+[void]$driveGrid.Columns.Add("SizeGB", "GB")
+$driveGrid.Columns["SizeGB"].Width = 70
+[void]$driveGrid.Columns.Add("MediaType", "Typ")
+$driveGrid.Columns["MediaType"].Width = 75
+[void]$driveGrid.Columns.Add("BusType", "Bus")
+$driveGrid.Columns["BusType"].Width = 75
+[void]$driveGrid.Columns.Add("Letters", "Lw.")
+$driveGrid.Columns["Letters"].Width = 70
+[void]$driveGrid.Columns.Add("HealthStatus", "Status")
+$driveGrid.Columns["HealthStatus"].Width = 80
 $tabOverview.Controls.Add($driveGrid)
 
 $btnRefresh = New-Object System.Windows.Forms.Button
@@ -700,10 +719,28 @@ function Refresh-Grid {
     $statusLabel.Text = "Laufwerke werden gelesen..."
     [System.Windows.Forms.Application]::DoEvents()
     $drives = Get-DriveInventory
-    $driveGrid.DataSource = @($drives)
-    if ($driveGrid.Rows.Count -gt 0) { $driveGrid.Rows[0].Selected = $true }
+    $script:DriveInventory = @($drives)
+    $driveGrid.Rows.Clear()
+    for ($i = 0; $i -lt $script:DriveInventory.Count; $i++) {
+        $d = $script:DriveInventory[$i]
+        $rowIndex = $driveGrid.Rows.Add(
+            $d.Index,
+            $d.Model,
+            $d.SizeGB,
+            $d.MediaType,
+            $d.BusType,
+            $d.Letters,
+            $d.HealthStatus
+        )
+        $driveGrid.Rows[$rowIndex].Tag = $i
+    }
+    if ($driveGrid.Rows.Count -gt 0) {
+        $driveGrid.ClearSelection()
+        $driveGrid.Rows[0].Selected = $true
+        $driveGrid.CurrentCell = $driveGrid.Rows[0].Cells[1]
+    }
     if ($drives.Count -gt 0) {
-        $statusLabel.Text = "$($drives.Count) Laufwerk(e) gefunden."
+        $statusLabel.Text = "$($drives.Count) Laufwerk(e) gefunden. Bitte Zeile markieren und dann Pruefen klicken."
     } elseif ($script:LastInventoryError) {
         $statusLabel.Text = "Keine Laufwerke gefunden. $script:LastInventoryError"
         [System.Windows.Forms.MessageBox]::Show("Keine Laufwerke gefunden.`r`n`r`n$script:LastInventoryError`r`n`r`nBitte als Administrator starten und pruefen, ob Windows Storage/CIM verfuegbar ist.", $script:AppName, "OK", "Warning") | Out-Null
@@ -713,8 +750,16 @@ function Refresh-Grid {
 }
 
 function Get-SelectedDrive {
-    if ($driveGrid.SelectedRows.Count -eq 0) { return $null }
-    return $driveGrid.SelectedRows[0].DataBoundItem
+    $row = $null
+    if ($driveGrid.SelectedRows.Count -gt 0) {
+        $row = $driveGrid.SelectedRows[0]
+    } elseif ($driveGrid.CurrentRow) {
+        $row = $driveGrid.CurrentRow
+    }
+    if (-not $row) { return $null }
+    $idx = [int]$row.Tag
+    if ($idx -lt 0 -or $idx -ge $script:DriveInventory.Count) { return $null }
+    return $script:DriveInventory[$idx]
 }
 
 function Show-Analysis {
@@ -736,6 +781,12 @@ function Show-Analysis {
 }
 
 $btnRefresh.Add_Click({ Refresh-Grid })
+
+$driveGrid.Add_CellDoubleClick({
+    if ($_.RowIndex -ge 0) {
+        $btnAnalyze.PerformClick()
+    }
+})
 
 $btnAnalyze.Add_Click({
     $drive = Get-SelectedDrive
