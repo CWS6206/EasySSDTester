@@ -7,6 +7,7 @@ Portable Windows 11 utility for checking SSD health, SMART data and simple seque
 ## Start
 
 Run `EasySSDTester.cmd`. No installation is required.
+Execution is only possible with administrator rights.
 
 For the most complete SMART output, place `smartctl.exe` from smartmontools in `Tools\smartctl.exe` next to the app, or make it available in `PATH`.
 
