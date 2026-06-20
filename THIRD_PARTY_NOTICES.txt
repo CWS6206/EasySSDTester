@@ -1,0 +1,9 @@
+Easy SSD Tester does not include smartmontools by default.
+
+Optional dependency:
+
+smartmontools / smartctl.exe
+Website: https://www.smartmontools.org/
+License: GNU GPL v2 or later, depending on the distributed smartmontools build.
+
+If you distribute Easy SSD Tester together with smartctl.exe, include the smartmontools license and source/offering information required by that project.

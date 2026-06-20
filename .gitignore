@@ -1,0 +1,8 @@
+*.tmp
+*.log
+*.bak
+*.ps1xml
+*.user
+*.zip
+Reports/
+Output/
